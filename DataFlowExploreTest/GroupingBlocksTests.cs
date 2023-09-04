@@ -343,7 +343,7 @@ namespace DataFlowExploreTest
             var joinBlock = new JoinBlock<string, int>(new GroupingDataflowBlockOptions { Greedy = true });
 
 
-            var terminalBlock = new ActionBlock<Tuple<string, int>>(i => actual.Add($"Person : {i.Item1} Id is: {i.Item2.ToString()}"));
+            var terminalBlock = new ActionBlock<Tuple<string, int>>(i => actual.Add($"Person : {i.Item1} Id is: {i.Item2}"));
 
             namesBufferBlock.LinkTo(joinBlock.Target1, new DataflowLinkOptions { PropagateCompletion = true });
             idBufferBlock.LinkTo(joinBlock.Target2, new DataflowLinkOptions { PropagateCompletion = true });
@@ -404,10 +404,6 @@ namespace DataFlowExploreTest
             namesBufferBlock.Complete();
             idBufferBlock.Complete();
 
-            await idBufferBlock.SendAsync(2).ConfigureAwait(false);
-            idBufferBlock.Complete();
-
-            //  await Task.WhenAll(terminalBlock.Completion, anotherTerminalBlock.Completion).ConfigureAwait(false);
             await terminalBlock.Completion.ConfigureAwait(false);
 
             for (int i = 0; i < expected.Count; i++)
@@ -432,8 +428,8 @@ namespace DataFlowExploreTest
             var charCounterTransformBlock = new TransformBlock<string, int>(i => i.Length);
 
             var batchedJoinBlock = new BatchedJoinBlock<string, int>(2);
-            var tupleBroadcastBlock = new BroadcastBlock<Tuple<IList<string>, IList<int>>>(i => i);
 
+            var tupleBroadcastBlock = new BroadcastBlock<Tuple<IList<string>, IList<int>>>(i => i);
             var stringAppenderAction = new ActionBlock<Tuple<IList<string>, IList<int>>>(i =>
             {
                 foreach (var item in i.Item1)
