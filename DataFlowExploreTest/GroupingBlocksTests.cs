@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 using Xunit;
@@ -334,8 +335,6 @@ namespace DataFlowExploreTest
                 "Person : Person3 Id is: 3",
                 "Person : Person4 Id is: 4",
                 "Person : Person5 Id is: 5",
-                "Person : Person6 Id is: 6",
-
         };
 
             var namesBufferBlock = new BufferBlock<string>();
@@ -351,50 +350,33 @@ namespace DataFlowExploreTest
 
             joinBlock.LinkTo(terminalBlock, new DataflowLinkOptions { PropagateCompletion = true });
 
-
-
             for (int i = 1; i <= 5; i++)
             {
                 await namesBufferBlock.SendAsync($"Person{i}");
             }
 
-            for (int i = 1; i <= 6; i++)
+            for (int i = 1; i <= 5; i++)
             {
                 await idBufferBlock.SendAsync(i);
             }
-            var s1Countbefore = namesBufferBlock.Count;
-            var s2Countbefore = idBufferBlock.Count;
-            var batchCountbefore = joinBlock.OutputCount;
-            //var joininput = joinBlock
-            //joinBlock.Complete();
 
-            await Task.Delay(10);
+            namesBufferBlock.Complete();
 
-            var s1CountAmoung = namesBufferBlock.Count;
-            var s2CountAmoung = idBufferBlock.Count;
-            var batchCountAmoung = joinBlock.OutputCount;
-
+            idBufferBlock.Complete();
 
             await terminalBlock.Completion.ConfigureAwait(false);
-            var s1CountAfter = namesBufferBlock.Count;
-            var s2CountAfter = idBufferBlock.Count;
-            var batchCountAfter = joinBlock.OutputCount;
-            foreach (var item in actual)
-            {
-                output.WriteLine(item);
-            }
 
             for (int i = 0; i < expected.Count; i++)
             {
                 Assert.Equal(expected[i], actual[i]);
             }
-
         }
 
         [Fact]
         public async Task JoinBlock_Greedy_false_Test()
         {
             var actual = new List<string>();
+
             var expected = new List<string>()
             {
                 "Person : Person1 Id is: 1",
@@ -405,17 +387,13 @@ namespace DataFlowExploreTest
 
             var joinBlock = new JoinBlock<string, int>(new GroupingDataflowBlockOptions { Greedy = false });
 
-            var terminalBlock = new ActionBlock<Tuple<string, int>>(i => actual.Add($"Person : {i.Item1} Id is: {i.Item2.ToString()}"));
-            // var anotherTerminalBlock = new ActionBlock<string>(i => output.WriteLine($"Message '{i}' consumed by another terminal block"));
+            var terminalBlock = new ActionBlock<Tuple<string, int>>(i => actual.Add($"Person : {i.Item1} Id is: {i.Item2}"));
 
             namesBufferBlock.LinkTo(joinBlock.Target1, new DataflowLinkOptions { PropagateCompletion = true });
             idBufferBlock.LinkTo(joinBlock.Target2, new DataflowLinkOptions { PropagateCompletion = true });
             joinBlock.LinkTo(terminalBlock, new DataflowLinkOptions { PropagateCompletion = true });
 
 
-
-            //await namesBufferBlock.SendAsync($"Person1").ConfigureAwait(false);
-            //await namesBufferBlock.SendAsync($"Person2").ConfigureAwait(false);
             await idBufferBlock.SendAsync(1).ConfigureAwait(false);
 
             for (int i = 1; i <= 3; i++)
@@ -423,12 +401,8 @@ namespace DataFlowExploreTest
                 await namesBufferBlock.SendAsync($"Person{i}").ConfigureAwait(false);
             }
 
-            await Task.Delay(10);
-
-            //namesBufferBlock.LinkTo(anotherTerminalBlock, new DataflowLinkOptions { PropagateCompletion = true });
-
             namesBufferBlock.Complete();
-
+            idBufferBlock.Complete();
 
             await idBufferBlock.SendAsync(2).ConfigureAwait(false);
             idBufferBlock.Complete();
@@ -441,211 +415,64 @@ namespace DataFlowExploreTest
                 Assert.Equal(expected[i], actual[i]);
             }
 
+            Assert.Equal(2, namesBufferBlock.Count);
         }
 
         [Fact]
         public async Task Simple_BathedJoinedBlock_Test()
         {
-            var actual = new List<string>();
-            var expected = new List<string>()
-            {
-                "Person : Person1 Id is: 1",
-                "Person : Person2 Id is: 2",
-                "Person : Person3 Id is: 3",
-                "Person : Person4 Id is: 4",
-                "Person : Person5 Id is: 5"
-            };
+            var actorsName = new List<string>() { "Alpachino", "Brando", "Deniro", "Russo" };
+            var aCharCount = 0;
+            StringBuilder sb = new StringBuilder();
+            var stringLength = 0;
 
-            var namesBufferBlock = new BufferBlock<string>();
-            var idBufferBlock = new BufferBlock<int>();
+            var headBroadcastBlock = new BroadcastBlock<string>(i => i);
 
-            var joinBlock = new BatchedJoinBlock<string, int>(2);
+            var toUpperTransformBlock = new TransformBlock<string, string>(i => i.ToUpper());
+            var charCounterTransformBlock = new TransformBlock<string, int>(i => i.Length);
 
+            var batchedJoinBlock = new BatchedJoinBlock<string, int>(2);
+            var tupleBroadcastBlock = new BroadcastBlock<Tuple<IList<string>, IList<int>>>(i => i);
 
-            var terminalBlock = new ActionBlock<Tuple<IList<string>, IList<int>>>((i) =>
+            var stringAppenderAction = new ActionBlock<Tuple<IList<string>, IList<int>>>(i =>
             {
                 foreach (var item in i.Item1)
                 {
-                    var index = i.Item1.IndexOf(item);
-                    actual.Add($"Person : {item} Id is: {i.Item2[index]}");
+                    sb.Append(item);
+                    aCharCount += item.Count(c => c == 'A');
                 }
             });
-            namesBufferBlock.LinkTo(joinBlock.Target1, new DataflowLinkOptions { PropagateCompletion = true });
-            idBufferBlock.LinkTo(joinBlock.Target2, new DataflowLinkOptions { PropagateCompletion = true });
-            joinBlock.LinkTo(terminalBlock, new DataflowLinkOptions { PropagateCompletion = true });
 
-            for (int i = 1; i <= 5; i++)
+            var lentghCalculatorAction = new ActionBlock<Tuple<IList<string>, IList<int>>>(i => stringLength += i.Item2.Sum());
+
+            headBroadcastBlock.LinkTo(toUpperTransformBlock, new DataflowLinkOptions { PropagateCompletion = true });
+            headBroadcastBlock.LinkTo(charCounterTransformBlock, new DataflowLinkOptions { PropagateCompletion = true });
+
+            toUpperTransformBlock.LinkTo(batchedJoinBlock.Target1, new DataflowLinkOptions { PropagateCompletion = true });
+            charCounterTransformBlock.LinkTo(batchedJoinBlock.Target2, new DataflowLinkOptions { PropagateCompletion = true });
+
+            batchedJoinBlock.LinkTo(tupleBroadcastBlock, new DataflowLinkOptions { PropagateCompletion = true });
+
+            tupleBroadcastBlock.LinkTo(stringAppenderAction, new DataflowLinkOptions { PropagateCompletion = true });
+            tupleBroadcastBlock.LinkTo(lentghCalculatorAction, new DataflowLinkOptions { PropagateCompletion = true });
+
+            foreach (var item in actorsName)
             {
-                await idBufferBlock.SendAsync(i).ConfigureAwait(false);
-                await namesBufferBlock.SendAsync($"Person{i}").ConfigureAwait(false);
-            }
-            await Task.Delay(1000);
-
-
-
-
-            //namesBufferBlock.Complete();
-
-            //idBufferBlock.Complete();
-
-            joinBlock.Complete();
-
-            await Task.Delay(100);
-            await terminalBlock.Completion.ConfigureAwait(false);
-
-            foreach (var item in actual)
-            {
-                output.WriteLine(item);
+                await headBroadcastBlock.SendAsync(item).ConfigureAwait(false);
             }
 
-            for (int i = 0; i < expected.Count; i++)
-            {
-                Assert.Equal(expected[i], actual[i]);
-            }
+            headBroadcastBlock.Complete();
+
+            await Task.WhenAll(stringAppenderAction.Completion, lentghCalculatorAction.Completion).ConfigureAwait(false);
+
+            output.WriteLine(sb.ToString());
+            output.WriteLine(stringLength.ToString());
+
+            Assert.Equal(stringLength, sb.Length);
+            Assert.Equal(aCharCount, sb.ToString().Count(c => c == 'A'));
         }
 
-        [Fact]
-        public async Task BatchBlock_with_sources_bigger_than_batch_size_and_greedy_false_Test1()
-        {
-            var actualList = new List<string>();
 
-            var source1 = new BufferBlock<string>();
-            var source2 = new BufferBlock<string>();
-            var source3 = new BufferBlock<string>();
-            var source4 = new BufferBlock<string>();
-
-            var batchBlock = new BatchBlock<string>(3, new GroupingDataflowBlockOptions { Greedy = false });
-
-            var terminalBlock = new ActionBlock<IEnumerable<string>>(i => actualList.AddRange(i));
-
-            source1.LinkTo(batchBlock, new DataflowLinkOptions { PropagateCompletion = true });
-            source2.LinkTo(batchBlock, new DataflowLinkOptions { PropagateCompletion = true });
-            source3.LinkTo(batchBlock, new DataflowLinkOptions { PropagateCompletion = true });
-            source4.LinkTo(batchBlock, new DataflowLinkOptions { PropagateCompletion = true });
-
-            batchBlock.LinkTo(terminalBlock, new DataflowLinkOptions { PropagateCompletion = true });
-
-            var t1 = Task.Factory.StartNew(async () =>
-            {
-                //await Task.Delay(1);
-                for (int i = 1; i <= 1; i++)
-                {
-                    await source1.SendAsync($"source1 - item {i}").ConfigureAwait(false);
-                }
-            });
-            var t2 = Task.Factory.StartNew(async () =>
-            {
-                for (int i = 1; i <= 5000; i++)
-                {
-                    await source2.SendAsync($"source2 - item {i}").ConfigureAwait(false);
-                }
-            });
-            var t3 = Task.Factory.StartNew(async () =>
-            {
-                for (int i = 1; i <= 5000; i++)
-                {
-                    await source3.SendAsync($"source3 - item {i}").ConfigureAwait(false);
-
-                }
-            });
-            var t4 = Task.Factory.StartNew(async () =>
-            {
-                for (int i = 1; i <= 5000; i++)
-                {
-                    await source4.SendAsync($"source4 - item {i}").ConfigureAwait(false);
-
-                }
-            });
-
-
-            await Task.WhenAll(t1.Result, t2.Result, t3.Result, t4.Result).ContinueWith(async delegate
-            {
-                await Task.Delay(20);
-                batchBlock.Complete();
-            }).ConfigureAwait(false);
-
-
-            await terminalBlock.Completion.ConfigureAwait(false);
-
-            Assert.Equal(15000, actualList.Count);
-        }
-        [Fact]
-        public async Task jointest()
-        {
-            var b1 = new BufferBlock<int>();
-            var b2 = new BufferBlock<int>();
-
-            var jb = new JoinBlock<int, int>(new GroupingDataflowBlockOptions { Greedy = false });
-
-            var ab = new ActionBlock<Tuple<int, int>>(i => output.WriteLine($"{i.Item1} - {i.Item2}"));
-
-            var ab1 = new ActionBlock<int>(i => output.WriteLine($" *{i}"));
-
-            b1.LinkTo(jb.Target1, new DataflowLinkOptions { PropagateCompletion = true });
-            b2.LinkTo(jb.Target2, new DataflowLinkOptions { PropagateCompletion = true });
-            jb.LinkTo(ab, new DataflowLinkOptions { PropagateCompletion = true });
-            b2.LinkTo(ab1, new DataflowLinkOptions { PropagateCompletion = true }, m => m % 2 == 0);
-
-            for (int i = 0; i < 5; i++)
-            {
-                b1.Post(i);
-                b2.Post(i);
-            }
-            b2.Post(5);
-            b2.Post(6);
-
-            var c1 = b1.Count;
-            var c2 = b2.Count;
-
-            b1.Complete();
-            b2.Complete();
-            await Task.WhenAll(ab.Completion, ab1.Completion);
-
-            c1 = b1.Count;
-            c2 = b2.Count;
-        }
-
-        [Fact]
-        public void BatchJoin_Test()
-        {
-            var b1 = new BufferBlock<string>();
-            var b2 = new BufferBlock<int>();
-
-            var bj = new BatchedJoinBlock<string, int>(2);
-
-            var ab = new ActionBlock<Tuple<IList<string>, IList<int>>>(i =>
-            {
-                foreach (var item in i.Item1)
-                {
-                    output.WriteLine(item);
-                }
-                foreach (var item in i.Item2)
-                {
-                    output.WriteLine(item.ToString());
-                }
-                output.WriteLine("-------------");
-            });
-
-            b1.LinkTo(bj.Target1, new DataflowLinkOptions { PropagateCompletion = true });
-            b2.LinkTo(bj.Target2, new DataflowLinkOptions { PropagateCompletion = true });
-            bj.LinkTo(ab, new DataflowLinkOptions { PropagateCompletion = true });
-
-            for (int i = 1; i <= 5; i++)
-            {
-                b1.Post(i.ToString() + '*');
-                b2.Post(i);
-            }
-
-            // b2.Post(60);
-
-            b1.Complete();
-            b2.Complete();
-
-            ab.Completion.Wait();
-
-
-
-        }
     }
 
 

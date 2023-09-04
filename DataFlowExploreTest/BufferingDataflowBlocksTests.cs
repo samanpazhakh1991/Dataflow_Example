@@ -243,24 +243,7 @@ namespace DataFlowExploreTest
 
             Assert.Equal(Expected, acual);
         }
-        [Fact]
-        public async Task WriteOnce()
-        {
-            var wo = new WriteOnceBlock<int>(null);
 
-            var action1 = new ActionBlock<int>(i => output.WriteLine(i.ToString()));
-            var action2 = new ActionBlock<int>(i => output.WriteLine(i.ToString()));
-
-            wo.LinkTo(action1, new DataflowLinkOptions { PropagateCompletion = true });
-            wo.LinkTo(action2, new DataflowLinkOptions { PropagateCompletion = true });
-            wo.Post(10);
-            wo.Post(50);
-            wo.Complete();
-
-            await Task.WhenAll(action1.Completion, action2.Completion);
-
-            int x = 0;
-        }
 
     }
 }
