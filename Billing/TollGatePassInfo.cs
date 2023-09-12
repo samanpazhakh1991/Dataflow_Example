@@ -11,6 +11,7 @@
         public int CameraCode { get; set; }
         public bool IsValid { get; set; }
         public bool IsDuplicate { get; set; }
-        
+        public DateTime LifeTime { get; set; }
+     
     }
 }
