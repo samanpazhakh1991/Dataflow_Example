@@ -10,7 +10,7 @@ namespace Billing
         List<Bill> listBills = new List<Bill>();
         ConcurrentBag<TollGatePassInfo> invalidLicensePlates = new ConcurrentBag<TollGatePassInfo>();
         ConcurrentBag<TollGatePassInfo> duplicateLicensePlates = new ConcurrentBag<TollGatePassInfo>();
-        ConcurrentDictionary<long, TollGatePassInfo> LicensePlates = new ConcurrentDictionary<long, TollGatePassInfo>();
+        ConcurrentDictionary<Guid, TollGatePassInfo> LicensePlates = new ConcurrentDictionary<Guid, TollGatePassInfo>();
         public void DataProvider()
         {
             var readData = from line in File.ReadAllLines(@"C:\Users\m.kashi\Downloads\Traffic_Mock_Data.csv").Skip(1)
@@ -55,7 +55,7 @@ namespace Billing
             broadcastBlock
                 .Link(addToBillListBlock, new DataflowLinkOptions { PropagateCompletion = true });
 
-            Parallel.ForEach(tollGatePassInfos, trafficInfo => validateLicensePlateBlock.SendAsync(trafficInfo));         
+            Parallel.ForEach(tollGatePassInfos, trafficInfo => validateLicensePlateBlock.SendAsync(trafficInfo));
 
             validateLicensePlateBlock.Complete();
 
@@ -67,7 +67,7 @@ namespace Billing
                   while (!token.IsCancellationRequested)
                   {
                       var expires = LicensePlates.TakeWhile(i => i.Value.LifeTime.Ticks < DateTime.Now.Ticks);
-                      Parallel.ForEach(expires, i => { LicensePlates.TryRemove(i.Key, out var item); });
+                      Parallel.ForEach(expires, i => { LicensePlates.TryRemove(i.Key, out var _); });
                       await Task.Delay(100);
                   }
               });
@@ -95,7 +95,7 @@ namespace Billing
                 cancellationTokenSource.Cancel(); cancellationTokenSource.Dispose();
                 await Task.WhenAll(catchControll, flowMonitor);
             }).ConfigureAwait(false);
-           
+
         }
 
         private Bill calculateBill(TollGatePassInfo info)
@@ -121,7 +121,7 @@ namespace Billing
             else
             {
                 info.IsDuplicate = false;
-                LicensePlates.TryAdd(info.DateTime.Ticks, info);
+                LicensePlates.TryAdd(Guid.NewGuid(), info);
             }
             return info;
         }
