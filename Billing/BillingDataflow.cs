@@ -55,8 +55,6 @@ namespace Billing
             broadcastBlock
                 .Link(addToBillListBlock, new DataflowLinkOptions { PropagateCompletion = true });
 
-            var time = DateTime.Now;
-
             Parallel.ForEach(tollGatePassInfos, trafficInfo => validateLicensePlateBlock.SendAsync(trafficInfo));         
 
             validateLicensePlateBlock.Complete();
@@ -97,8 +95,7 @@ namespace Billing
                 cancellationTokenSource.Cancel(); cancellationTokenSource.Dispose();
                 await Task.WhenAll(catchControll, flowMonitor);
             }).ConfigureAwait(false);
-            Console.WriteLine(time);
-            Console.WriteLine(DateTime.Now);
+           
         }
 
         private Bill calculateBill(TollGatePassInfo info)
