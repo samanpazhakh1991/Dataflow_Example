@@ -7,18 +7,45 @@ public static class DataflowLinkExtensions
         this ISourceBlock<TSource> source,
         IPropagatorBlock<TSource, TTarget> target, DataflowLinkOptions? dataflowLinkOptions = null, Predicate<TSource>? predicate = null)
     {
-        source.LinkTo(
-            target,
-            dataflowLinkOptions, predicate);
+        if (dataflowLinkOptions != null && predicate == null)
+        {
+            source.LinkTo(target, dataflowLinkOptions);
+        }
+        if (predicate != null && dataflowLinkOptions == null)
+        {
+            source.LinkTo(target, predicate);
+        }
+        if (predicate != null && dataflowLinkOptions != null)
+        {
+            source.LinkTo(target, dataflowLinkOptions, predicate);
+        }
+        if (predicate == null && dataflowLinkOptions == null)
+        {
+            source.LinkTo(target);
+        }
+
         return target;
     }
 
     public static void Link<TSource>(
         this ISourceBlock<TSource> source, ITargetBlock<TSource> target, DataflowLinkOptions? dataflowLinkOptions = null, Predicate<TSource>? predicate = null)
     {
-        source.LinkTo(
-            target,
-            dataflowLinkOptions, predicate);
+        if (dataflowLinkOptions != null && predicate == null)
+        {
+            source.LinkTo(target, dataflowLinkOptions);
+        }
+        if (predicate != null && dataflowLinkOptions == null)
+        {
+            source.LinkTo(target, predicate);
+        }
+        if (predicate != null && dataflowLinkOptions != null)
+        {
+            source.LinkTo(target, dataflowLinkOptions, predicate);
+        }
+        if (predicate == null && dataflowLinkOptions == null)
+        {
+            source.LinkTo(target);
+        }
     }
 }
 
