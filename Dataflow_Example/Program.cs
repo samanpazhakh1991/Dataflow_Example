@@ -9,7 +9,7 @@ public class Program
         Console.WriteLine("Hello, World!");
 
        
-        BillingDataflow billingDataflow = new BillingDataflow();
+        BillingDataFlowWithConcurrentDictionary billingDataflow = new BillingDataFlowWithConcurrentDictionary();
 
         billingDataflow.DataProvider();
         await billingDataflow.ProcessData(TimeSpan.FromMinutes(2)).ConfigureAwait(false);

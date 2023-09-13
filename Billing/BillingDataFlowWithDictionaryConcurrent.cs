@@ -3,7 +3,7 @@ using System.Threading.Tasks.Dataflow;
 using System.Xml.Linq;
 namespace Billing
 {
-    public class BillingDataFlowWithConcurrentDictionary
+    public class BillingDataFlowWithDictionaryConcurrent
     {
         List<TollGatePassInfo> tollGatePassInfos = new List<TollGatePassInfo>();
         List<Bill> sentToPolice = new List<Bill>();
@@ -55,7 +55,7 @@ namespace Billing
 
             //cancellationTokenSource.Cancel();
 
-           await await flowMonitor.ConfigureAwait(false);
+            await await flowMonitor.ConfigureAwait(false);
         }
 
         private Task<Task> monitorTask()
@@ -63,10 +63,10 @@ namespace Billing
             var s = 1;
             return Task.Factory.StartNew(async () =>
             {
-                while ( processCount < 1501000)
+                while (processCount < 1501000)
                 {
                     var oldCount = processCount;
-                    await Task.Delay(s*1000);
+                    await Task.Delay(s * 1000);
                     Console.Clear();
                     Console.WriteLine($"Processed items count : {processCount }");
                     Console.WriteLine($"Processed items per second : {(processCount - oldCount) / s}");
