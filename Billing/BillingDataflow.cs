@@ -10,7 +10,12 @@ namespace Billing
         List<Bill> listBills = new List<Bill>();
         ConcurrentBag<TollGatePassInfo> invalidLicensePlates = new ConcurrentBag<TollGatePassInfo>();
         ConcurrentBag<TollGatePassInfo> duplicateLicensePlates = new ConcurrentBag<TollGatePassInfo>();
-        ConcurrentDictionary<Guid, TollGatePassInfo> LicensePlates = new ConcurrentDictionary<Guid, TollGatePassInfo>();
+        SortedDictionary<string, long> LicensePlates1 = new();
+        SortedDictionary<string, long> LicensePlates2 = new();
+        SortedDictionary<string, long> LicensePlates3 = new();
+        SortedDictionary<string, long> LicensePlates4 = new();
+        SortedDictionary<string, long> LicensePlates5 = new();
+        long processCount;
         public void DataProvider()
         {
             var readData = from line in File.ReadAllLines(@"C:\Users\m.kashi\Downloads\Traffic_Mock_Data.csv").Skip(1)
@@ -26,27 +31,128 @@ namespace Billing
                            };
             tollGatePassInfos.AddRange(readData);
         }
+        TransformBlock<TollGatePassInfo, TollGatePassInfo> validateLicensePlateBlock, checkDuplicationBlock1, checkDuplicationBlock2, checkDuplicationBlock3, checkDuplicationBlock4, checkDuplicationBlock5;
+        ActionBlock<TollGatePassInfo> logInvalidLicensePlateBlock, logDuplicateBlock;
+        TransformBlock<TollGatePassInfo, Bill> createBillBlock;
+        BatchBlock<Bill> bundleItemsToBatchesBlock;
+        ActionBlock<IEnumerable<Bill>> sendToPoliceBlock, addToBillListBlock;
+        private CancellationTokenSource cancellationTokenSource;
 
-        public async Task ProcessData(int validityDuration, int catchLifeTime)
+        public async Task ProcessData(TimeSpan validityDuration)
         {
-            var validateLicensePlateBlock = new TransformBlock<TollGatePassInfo, TollGatePassInfo>(plaqueValidation, new ExecutionDataflowBlockOptions { EnsureOrdered = false });
-            var logInvalidLicensePlateBlock = new ActionBlock<TollGatePassInfo>(i => invalidLicensePlates.Add(i));
-            var checkDuplicationBlock = new TransformBlock<TollGatePassInfo, TollGatePassInfo>(i => checkDuplicationPlaque(i, validityDuration, catchLifeTime), new ExecutionDataflowBlockOptions { MaxDegreeOfParallelism = 3 });
-            var logDuplicateBlock = new ActionBlock<TollGatePassInfo>(i => duplicateLicensePlates.Add(i));
-            var createBillBlock = new TransformBlock<TollGatePassInfo, Bill>(calculateBill);
-            var bundleItemsToBatchesBlock = new BatchBlock<Bill>(100);
-            var broadcastBlock = new BroadcastBlock<IEnumerable<Bill>>(i => i);
-            var sendToPoliceBlock = new ActionBlock<IEnumerable<Bill>>(i => sentToPolice.AddRange(i));
-            var addToBillListBlock = new ActionBlock<IEnumerable<Bill>>(i => listBills.AddRange(i));
+            processCount = 0;
+            cancellationTokenSource = new CancellationTokenSource();
 
+            assemblePipeLine(validityDuration);
+
+            Task postingTask = postDataTask();
+
+            //Task<Task> catchControll = emptyCacheTask(catchLifeTime);
+
+            Task<Task> flowMonitor = monitorTask();
+
+            await Task.WhenAll(postingTask, sendToPoliceBlock.Completion, addToBillListBlock.Completion, logInvalidLicensePlateBlock.Completion, logDuplicateBlock.Completion);
+
+            //cancellationTokenSource.Cancel();
+
+           await await flowMonitor.ConfigureAwait(false);
+        }
+
+        private Task<Task> monitorTask()
+        {
+            var s = 1;
+            return Task.Factory.StartNew(async () =>
+            {
+                while ( processCount < 1501000)
+                {
+                    var oldCount = processCount;
+                    await Task.Delay(s*1000);
+                    Console.Clear();
+                    Console.WriteLine($"Processed items count : {processCount }");
+                    Console.WriteLine($"Processed items per second : {(processCount - oldCount) / s}");
+                    Console.WriteLine($"validateLicensePlateBlock Input Count : {validateLicensePlateBlock.InputCount}");
+                    Console.WriteLine($"logInvalidLicensePlateBlock Input Count : {logInvalidLicensePlateBlock.InputCount}");
+                    Console.WriteLine($"checkDuplicationBlock Input Count : {checkDuplicationBlock1.InputCount}");
+                    Console.WriteLine($"checkDuplicationBlock Input Count : {checkDuplicationBlock2.InputCount}");
+                    Console.WriteLine($"checkDuplicationBlock Input Count : {checkDuplicationBlock3.InputCount}");
+                    Console.WriteLine($"checkDuplicationBlock Input Count : {checkDuplicationBlock4.InputCount}");
+                    Console.WriteLine($"checkDuplicationBlock Input Count : {checkDuplicationBlock5.InputCount}");
+                    Console.WriteLine($"logDuplicateBlock Input Count : {logDuplicateBlock.InputCount}");
+                    Console.WriteLine($"createBillBlock Input Count : {createBillBlock.InputCount}");
+                    Console.WriteLine($"bundleItemsToBatchesBlock Input Count : {bundleItemsToBatchesBlock.OutputCount}");
+                    Console.WriteLine($"addToBillListBlock Input Count : {addToBillListBlock.InputCount}");
+                    Console.WriteLine($"sendToPoliceBlock Input Count : {sendToPoliceBlock.InputCount}");
+                    Console.WriteLine("____________________________________");
+
+                }
+                validateLicensePlateBlock.Complete();
+                Console.WriteLine($"Finished monitoring...");
+            });
+        }
+
+        //private Task<Task> emptyCacheTask(int catchLifeTime)
+        //{
+        //    return Task.Factory.StartNew(async () =>
+        //    {
+        //        while (!cancellationTokenSource.Token.IsCancellationRequested)
+        //        {
+        //            var expires = LicensePlates.TakeWhile(i => i.Value.LifeTime.Ticks < DateTime.Now.Ticks);
+        //            Parallel.ForEach(expires, i => { LicensePlates.TryRemove(i.Key, out var _); });
+        //            await Task.Delay(2*catchLifeTime);
+        //        }
+        //    });
+        //}
+
+        private Task postDataTask()
+        {
+            return Task.Run(() =>
+            {
+                Parallel.ForEach(tollGatePassInfos, trafficInfo => validateLicensePlateBlock.Post(trafficInfo));
+
+                //validateLicensePlateBlock.Complete();
+            });
+        }
+
+        private void assemblePipeLine(TimeSpan validityDuration)
+        {
+            validateLicensePlateBlock = new TransformBlock<TollGatePassInfo, TollGatePassInfo>(plaqueValidation, new ExecutionDataflowBlockOptions { EnsureOrdered = false });
+            logInvalidLicensePlateBlock = new ActionBlock<TollGatePassInfo>(i => invalidLicensePlates.Add(i));
+            checkDuplicationBlock1 = new TransformBlock<TollGatePassInfo, TollGatePassInfo>(i => checkDuplicationPlaque(i, validityDuration, LicensePlates1), new ExecutionDataflowBlockOptions { MaxDegreeOfParallelism = 1 });
+            checkDuplicationBlock2 = new TransformBlock<TollGatePassInfo, TollGatePassInfo>(i => checkDuplicationPlaque(i, validityDuration, LicensePlates2), new ExecutionDataflowBlockOptions { MaxDegreeOfParallelism = 1 });
+            checkDuplicationBlock3 = new TransformBlock<TollGatePassInfo, TollGatePassInfo>(i => checkDuplicationPlaque(i, validityDuration, LicensePlates3), new ExecutionDataflowBlockOptions { MaxDegreeOfParallelism = 1 });
+            checkDuplicationBlock4 = new TransformBlock<TollGatePassInfo, TollGatePassInfo>(i => checkDuplicationPlaque(i, validityDuration, LicensePlates4), new ExecutionDataflowBlockOptions { MaxDegreeOfParallelism = 1 });
+            checkDuplicationBlock5 = new TransformBlock<TollGatePassInfo, TollGatePassInfo>(i => checkDuplicationPlaque(i, validityDuration, LicensePlates5), new ExecutionDataflowBlockOptions { MaxDegreeOfParallelism = 1 });
+            logDuplicateBlock = new ActionBlock<TollGatePassInfo>(i => duplicateLicensePlates.Add(i));
+            createBillBlock = new TransformBlock<TollGatePassInfo, Bill>(calculateBill);
+            bundleItemsToBatchesBlock = new BatchBlock<Bill>(100);
+            var broadcastBlock = new BroadcastBlock<IEnumerable<Bill>>(i => i);
+            sendToPoliceBlock = new ActionBlock<IEnumerable<Bill>>(i => sentToPolice.AddRange(i));
+            addToBillListBlock = new ActionBlock<IEnumerable<Bill>>(i => listBills.AddRange(i));
             validateLicensePlateBlock
                 .Link(logInvalidLicensePlateBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsValid == false);
 
             validateLicensePlateBlock
-                .Link(checkDuplicationBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsValid == true)
+                .Link(checkDuplicationBlock1, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsValid == true && "12".Contains(i.LicensePlate[0]))
                 .Link(logDuplicateBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == true);
+            validateLicensePlateBlock
+                .Link(checkDuplicationBlock2, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsValid == true && "34".Contains(i.LicensePlate[0]))
+                .Link(logDuplicateBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == true);
+            checkDuplicationBlock2.Link(createBillBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == false);
+            validateLicensePlateBlock
+                .Link(checkDuplicationBlock3, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsValid == true && "56".Contains(i.LicensePlate[0]))
+                .Link(logDuplicateBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == true);
+            checkDuplicationBlock3.Link(createBillBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == false);
+            validateLicensePlateBlock
+                 .Link(checkDuplicationBlock4, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsValid == true && "78".Contains(i.LicensePlate[0]))
+                 .Link(logDuplicateBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == true);
+            checkDuplicationBlock4.Link(createBillBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == false);
+            validateLicensePlateBlock
+                             .Link(checkDuplicationBlock5, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsValid == true && "9".Contains(i.LicensePlate[0]))
+                 .Link(logDuplicateBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == true);
+            checkDuplicationBlock5.Link(createBillBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == false);
 
-            checkDuplicationBlock
+
+            checkDuplicationBlock1
                 .Link(createBillBlock, new DataflowLinkOptions { PropagateCompletion = true }, i => i.IsDuplicate == false)
                 .Link(bundleItemsToBatchesBlock, new DataflowLinkOptions { PropagateCompletion = true })
                 .Link(broadcastBlock, new DataflowLinkOptions { PropagateCompletion = true })
@@ -54,48 +160,6 @@ namespace Billing
 
             broadcastBlock
                 .Link(addToBillListBlock, new DataflowLinkOptions { PropagateCompletion = true });
-
-            Parallel.ForEach(tollGatePassInfos, trafficInfo => validateLicensePlateBlock.SendAsync(trafficInfo));
-
-            validateLicensePlateBlock.Complete();
-
-            CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
-            CancellationToken token = cancellationTokenSource.Token;
-
-            var catchControll = Task.Factory.StartNew(async () =>
-              {
-                  while (!token.IsCancellationRequested)
-                  {
-                      var expires = LicensePlates.TakeWhile(i => i.Value.LifeTime.Ticks < DateTime.Now.Ticks);
-                      Parallel.ForEach(expires, i => { LicensePlates.TryRemove(i.Key, out var _); });
-                      await Task.Delay(100);
-                  }
-              });
-
-            var flowMonitor = Task.Factory.StartNew(async () =>
-            {
-                while (!token.IsCancellationRequested)
-                {
-                    await Task.Delay(50);
-                    Console.Clear();
-                    Console.WriteLine($"validateLicensePlateBlock Input Count : {validateLicensePlateBlock.InputCount}");
-                    Console.WriteLine($"logInvalidLicensePlateBlock Input Count : {logInvalidLicensePlateBlock.InputCount}");
-                    Console.WriteLine($"checkDuplicationBlock Input Count : {checkDuplicationBlock.InputCount}");
-                    Console.WriteLine($"logDuplicateBlock Input Count : {logDuplicateBlock.InputCount}");
-                    Console.WriteLine($"createBillBlock Input Count : {createBillBlock.InputCount}");
-                    Console.WriteLine($"bundleItemsToBatchesBlock Input Count : {bundleItemsToBatchesBlock.OutputCount}");
-                    Console.WriteLine($"addToBillListBlock Input Count : {addToBillListBlock.InputCount}");
-                    Console.WriteLine($"sendToPoliceBlock Input Count : {sendToPoliceBlock.InputCount}");
-                    Console.WriteLine("____________________________________");
-                }
-            });
-
-            await Task.WhenAll(sendToPoliceBlock.Completion, addToBillListBlock.Completion, logInvalidLicensePlateBlock.Completion, logDuplicateBlock.Completion).ContinueWith(async delegate
-            {
-                cancellationTokenSource.Cancel(); cancellationTokenSource.Dispose();
-                await Task.WhenAll(catchControll, flowMonitor);
-            }).ConfigureAwait(false);
-
         }
 
         private Bill calculateBill(TollGatePassInfo info)
@@ -111,18 +175,20 @@ namespace Billing
 
             return bill;
         }
-        private TollGatePassInfo checkDuplicationPlaque(TollGatePassInfo info, int validityDuration, int catchLifeTime)
+        private TollGatePassInfo checkDuplicationPlaque(TollGatePassInfo info, TimeSpan validityDuration, SortedDictionary<string, long> list)
         {
-            info.LifeTime = DateTime.Now.AddMilliseconds(catchLifeTime);
-            if (LicensePlates.Any(i => i.Value.LicensePlate == info.LicensePlate && Math.Abs((double)(i.Value.DateTime - info.DateTime).TotalMinutes) < validityDuration))
+            if (list.ContainsKey(info.LicensePlate) && Math.Abs((double)(list[info.LicensePlate] - info.DateTime.Ticks)) < validityDuration.Ticks)
             {
                 info.IsDuplicate = true;
             }
             else
             {
                 info.IsDuplicate = false;
-                LicensePlates.TryAdd(Guid.NewGuid(), info);
+                //info.LifeTime = DateTime.Now.AddMilliseconds(catchLifeTime);
+
+                list[info.LicensePlate] = Math.Max(list.ContainsKey(info.LicensePlate) ? list[info.LicensePlate] : 0, info.DateTime.Ticks);
             }
+            Interlocked.Increment(ref processCount);
             return info;
         }
 

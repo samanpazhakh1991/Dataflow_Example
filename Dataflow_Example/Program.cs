@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 
 public class Program
 {
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         Console.WriteLine("Hello, World!");
 
@@ -12,8 +12,8 @@ public class Program
         BillingDataflow billingDataflow = new BillingDataflow();
 
         billingDataflow.DataProvider();
-        billingDataflow.ProcessData(10,1).GetAwaiter().GetResult();
-        Console.WriteLine();
+        await billingDataflow.ProcessData(TimeSpan.FromMinutes(2)).ConfigureAwait(false);
+        Console.WriteLine("Finished! press any key to Exit...");
         Console.ReadKey();
     }
 }
